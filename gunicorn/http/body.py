@@ -6,11 +6,10 @@
 import io
 import sys
 
-from gunicorn.http.errors import (NoMoreData, ChunkMissingTerminator,
-                                  InvalidChunkSize)
+from gunicorn.http.errors import NoMoreData, ChunkMissingTerminator, InvalidChunkSize
 
 
-class ChunkedReader(object):
+class ChunkedReader(io.IOBase):
     def __init__(self, req, unreader):
         self.req = req
         self.parser = self.parse_chunked(unreader)
@@ -51,8 +50,10 @@ class ChunkedReader(object):
         if done:
             unreader.unread(buf.getvalue()[2:])
             return b""
-        self.req.trailers = self.req.parse_headers(buf.getvalue()[:idx], from_trailer=True)
-        unreader.unread(buf.getvalue()[idx + 4:])
+        self.req.trailers = self.req.parse_headers(
+            buf.getvalue()[:idx], from_trailer=True
+        )
+        unreader.unread(buf.getvalue()[idx + 4 :])
 
     def parse_chunked(self, unreader):
         (size, rest) = self.parse_chunk_size(unreader)
@@ -68,7 +69,7 @@ class ChunkedReader(object):
             rest = rest[size:]
             while len(rest) < 2:
                 rest += unreader.read()
-            if rest[:2] != b'\r\n':
+            if rest[:2] != b"\r\n":
                 raise ChunkMissingTerminator(rest[:2])
             (size, rest) = self.parse_chunk_size(unreader, data=rest[2:])
 
@@ -83,7 +84,7 @@ class ChunkedReader(object):
             idx = buf.getvalue().find(b"\r\n")
 
         data = buf.getvalue()
-        line, rest_chunk = data[:idx], data[idx + 2:]
+        line, rest_chunk = data[:idx], data[idx + 2 :]
 
         # RFC9112 7.1.1: BWS before chunk-ext - but ONLY then
         chunk_size, *chunk_ext = line.split(b";", 1)
@@ -107,8 +108,12 @@ class ChunkedReader(object):
             raise NoMoreData()
         buf.write(data)
 
+    @property
+    def readable(self) -> bool:
+        return True
 
-class LengthReader(object):
+
+class LengthReader(io.IOBase):
     def __init__(self, unreader, length):
         self.unreader = unreader
         self.length = length
@@ -137,8 +142,12 @@ class LengthReader(object):
         self.length -= size
         return ret
 
+    @property
+    def readable(self) -> bool:
+        return True
 
-class EOFReader(object):
+
+class EOFReader(io.IOBase):
     def __init__(self, unreader):
         self.unreader = unreader
         self.buf = io.BytesIO()
@@ -175,8 +184,12 @@ class EOFReader(object):
         self.buf.write(rest)
         return ret
 
+    @property
+    def readable(self) -> bool:
+        return True
 
-class Body(object):
+
+class Body(io.IOBase):
     def __init__(self, reader):
         self.reader = reader
         self.buf = io.BytesIO()
@@ -259,6 +272,10 @@ class Body(object):
                 ret.append(data)
                 data = b""
             else:
-                line, data = data[:pos + 1], data[pos + 1:]
+                line, data = data[: pos + 1], data[pos + 1 :]
                 ret.append(line)
         return ret
+
+    @property
+    def readable(self) -> bool:
+        return True
